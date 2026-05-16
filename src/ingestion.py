@@ -16,12 +16,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import polars as pl
+import polars as pl # type: ignore
 
 from src.config import (
     RAW_DIR,
     RAW_PARQUET,
-    CSV_SEPARATOR,
     CSV_HAS_HEADER,
     CSV_RAW_COLUMNS,
     CSV_COLUMNS,

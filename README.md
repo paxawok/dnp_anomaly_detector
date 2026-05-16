@@ -59,7 +59,7 @@ graph LR
 
 1. **Клонуйте репозиторій:**
    ```bash
-   git clone https://github.com/yourusername/web-log-anomaly-detection.git
+   git clone https://github.com/paxawok/dnp_anomaly_detector.git
    cd web-log-anomaly-detection
    ```
 

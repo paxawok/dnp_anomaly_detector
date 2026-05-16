@@ -19,10 +19,10 @@ from pathlib import Path
 
 import joblib
 import numpy as np
-import polars as pl
+import polars as pl # type: ignore
 from sklearn.cluster import DBSCAN
 from sklearn.ensemble import IsolationForest
-from sklearn.neighbors import LocalOutlierFactor
+from sklearn.linear_model import SGDOneClassSVM
 from sklearn.preprocessing import StandardScaler
 
 from config import (
@@ -62,15 +62,26 @@ def _classify_type(
 ) -> str:
     if label != -1:
         return "normal"
-    if req_count > 100 and unique_urls < 5:
-        return "DDoS / flood"
-    if bot_ua_rate > 0.8:
+        
+    # Коефіцієнт: скільки унікальних сторінок відкрито на 1 запит
+    url_ratio = unique_urls / max(req_count, 1)
+
+    if bot_ua_rate > 0.5:
         return "bot / crawler"
-    if unique_urls > 50 and error_4xx_rate < 0.1:
-        return "web scraper"
-    if error_4xx_rate > 0.4:
-        return "vulnerability scan / brute-force"
-    return "unknown anomaly"
+        
+    if error_4xx_rate > 0.15: # Знизив поріг, сканери часто ховаються
+        return "vulnerability scan / dir-brute"
+        
+    if req_count > 100 and url_ratio < 0.05:
+        return "DDoS / flood (single endpoint)"
+        
+    if unique_urls > 30 or url_ratio > 0.6:
+        return "web scraper (content theft)"
+        
+    if req_count > 50:
+        return "high-volume anomaly"
+        
+    return "low-volume anomaly (needs manual review)"
 
 
 # ─── Другорядний алгоритм (DBSCAN або LOF) ────────────────────────────────────
@@ -98,31 +109,24 @@ def _run_secondary(X: np.ndarray) -> np.ndarray:
         joblib.dump(db, _SEC_PATH)
 
     else:
-        # ── LOF із вибіркою — масштабований для великих датасетів ────────────
-        sample_size = min(_LOF_SAMPLE_SIZE, n)
+        # ── SGD One-Class SVM — блискавично для великих датасетів ────────────
         logger.info(
-            "Вторинна модель: LOF  (n=%d > %d)  "
-            "навчання на вибірці %d рядків  contamination=%.2f",
-            n, _DBSCAN_MAX_ROWS, sample_size, IF_CONTAMINATION,
+            "Вторинна модель: SGDOneClassSVM  (n=%d > %d)",
+            n, _DBSCAN_MAX_ROWS
         )
-        rng = np.random.default_rng(IF_RANDOM_STATE)
-        sample_idx = rng.choice(n, size=sample_size, replace=False)
-        X_sample = X[sample_idx]
-
-        lof = LocalOutlierFactor(
-            n_neighbors=20,
-            contamination=IF_CONTAMINATION,
-            novelty=True,        # дозволяє predict() на нових даних
-            n_jobs=-1,
+        # Навчаємо лінійний SVM на всьому датасеті (він лінійно залежить від N)
+        svm = SGDOneClassSVM(
+            nu=IF_CONTAMINATION,   # аналог contamination
+            random_state=IF_RANDOM_STATE,
         )
-        lof.fit(X_sample)
-        labels = lof.predict(X).astype(np.int8)   # -1 = аномалія, 1 = норма
+        svm.fit(X)
+        labels = svm.predict(X).astype(np.int8)   # -1 = аномалія, 1 = норма
 
         n_anom = int((labels == -1).sum())
         logger.info(
-            "  LOF аномалій: %d  (%.1f %%)", n_anom, n_anom / n * 100
+            "  SVM аномалій: %d  (%.1f %%)", n_anom, n_anom / n * 100
         )
-        joblib.dump(lof, _SEC_PATH)
+        joblib.dump(svm, _SEC_PATH)
 
     logger.info("Вторинна модель збережена: %s", _SEC_PATH)
     return labels
@@ -191,8 +195,13 @@ def fit_and_score(
     )
 
     # ── 6. Приєднуємо мітки до DataFrame ─────────────────────────────────────
+    # IF видає скор де від'ємне = аномалія. Зробимо Risk Score (0-100)
+    # Наприклад, -0.8 -> 80, -0.4 -> 40. Чим більше, тим гірше.
+    risk_score = np.clip(-if_scores * 100, 0, 100)
+
     scored = df.with_columns([
         pl.Series("anomaly_score_if",  if_scores.astype(np.float32)),
+        pl.Series("risk_score_100",    risk_score.astype(np.float32)), # НОВА КОЛОНКА
         pl.Series("label_if",          if_labels.astype(np.int8)),
         pl.Series("label_secondary",   sec_labels),
         pl.Series("label_combined",    combined),

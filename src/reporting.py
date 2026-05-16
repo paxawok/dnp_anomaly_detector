@@ -34,8 +34,9 @@ REPORT_COLS = [
     "total_bytes",
     "bot_ua_rate",
     "anomaly_score_if",
+    "risk_score_100",
     "label_if",
-    "label_dbscan",
+    "label_secondary",
     "anomaly_type",
 ]
 
@@ -95,27 +96,27 @@ def generate_report(
         print(f"  {row['anomaly_type']:<40}  {row['count']:>4}  ({pct:.1f} %)")
 
     # ── Топ-15 найпідозріліших IP ─────────────────────────────────────────────
-    print(f"\n{'─'*72}")
-    print("  Топ-15 найпідозріліших IP-адрес (за Anomaly Score IF)")
-    print(f"{'─'*72}")
+    print(f"\n{'─'*76}")
+    print("  Топ-15 найпідозріліших IP-адрес (за максимальним Risk Score)")
+    print(f"{'─'*76}")
     top_ips = (
         anom_df.group_by("host")
                .agg([
                    pl.len().alias("anom_windows"),
-                   pl.col("anomaly_score_if").mean().alias("avg_score"),
+                   pl.col("risk_score_100").max().alias("max_risk"), # Нова колонка
                    pl.col("req_count").sum().alias("total_reqs"),
                    pl.col("anomaly_type").first().alias("type"),
                ])
-               .sort("avg_score")     # від'ємніше = підозріліше
+               .sort("max_risk", descending=True)     # 100 - найгірше
                .head(15)
     )
-    print(f"  {'IP-адреса':<22} {'Вікон':>7} {'Score':>8} "
+    print(f"  {'IP-адреса':<22} {'Вікон':>7} {'Risk %':>8} "
           f"{'Запитів':>8}  Тип")
-    print(f"  {'─'*22} {'─'*7} {'─'*8} {'─'*8}  {'─'*30}")
+    print(f"  {'─'*22} {'─'*7} {'─'*8} {'─'*8}  {'─'*32}")
     for row in top_ips.to_dicts():
         print(
             f"  {row['host']:<22} {row['anom_windows']:>7} "
-            f"{row['avg_score']:>8.4f} {row['total_reqs']:>8}  {row['type']}"
+            f"{row['max_risk']:>8.1f} {row['total_reqs']:>8}  {row['type']}"
         )
 
     # ── Середні ознаки по типах ───────────────────────────────────────────────
