@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import polars as pl
+import polars as pl # type: ignore
 
 from src.config import SCORED_PARQUET, REPORT_PATH
 
