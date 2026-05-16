@@ -56,6 +56,7 @@ CSV_COLUMNS = [
 
 # Формат дати у логах: 05/Feb/2018 06:25:05
 DATETIME_FORMAT = "%d/%b/%Y %H:%M:%S"
+# DATETIME_FORMAT_IRAN = "%d/%b/%Y:%H:%M:%S %z"
 
 # ─── Feature Engineering ──────────────────────────────────────────────────────
 

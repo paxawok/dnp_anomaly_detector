@@ -37,11 +37,12 @@ def _parse_and_cast(df: pl.DataFrame) -> pl.DataFrame:
       - host, resource, user_agent → рядки без зайвих пробілів
     """
     return df.with_columns([
-        # Часова мітка
-        pl.col("datetime")
-          .str.strip_chars()
-          .str.to_datetime(format=DATETIME_FORMAT, strict=False)
-          .alias("ts"),
+        # Часова мітка: пробуємо польський формат, якщо помилка (null) -> пробуємо іранський
+        pl.coalesce([
+            pl.col("datetime")
+              .str.strip_chars()
+              .str.to_datetime(format=DATETIME_FORMAT, strict=False),
+        ]).alias("ts"),
 
         # HTTP-статус
         pl.col("status")
