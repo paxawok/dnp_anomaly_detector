@@ -18,6 +18,9 @@ from pathlib import Path
 import polars as pl # type: ignore
 
 from src.config import SCORED_PARQUET, REPORT_PATH
+from datetime import datetime
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +87,7 @@ def generate_report(
 
     # ── Розподіл типів аномалій ───────────────────────────────────────────────
     print(f"\n{'─'*50}")
-    print("  Розподіл аномальних сесій за типом загрози")
+    print("  Rozpodiл аномальних сесій за типом загрози")
     print(f"{'─'*50}")
     type_dist = (
         anom_df.group_by("anomaly_type")
@@ -103,11 +106,11 @@ def generate_report(
         anom_df.group_by("host")
                .agg([
                    pl.len().alias("anom_windows"),
-                   pl.col("risk_score_100").max().alias("max_risk"), # Нова колонка
+                   pl.col("risk_score_100").max().alias("max_risk"),
                    pl.col("req_count").sum().alias("total_reqs"),
                    pl.col("anomaly_type").first().alias("type"),
                ])
-               .sort("max_risk", descending=True)     # 100 - найгірше
+               .sort("max_risk", descending=True)
                .head(15)
     )
     print(f"  {'IP-адреса':<22} {'Вікон':>7} {'Risk %':>8} "
@@ -144,14 +147,19 @@ def generate_report(
 
     print(f"\n{sep}\n")
 
+    # ── Динамічне додавання часової мітки до файлу ────────────────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    final_report_path = report_path.with_stem(f"{report_path.stem}_{timestamp}")
+
     # ── Збереження CSV-звіту ──────────────────────────────────────────────────
     report = (
         anom_df.select([c for c in REPORT_COLS if c in anom_df.columns])
                .sort("anomaly_score_if")   # найпідозріліші зверху
     )
-    report.write_csv(report_path)
+    report.write_csv(final_report_path)
     logger.info(
         "CSV-звіт збережено: %s  (%d аномальних сесій)",
-        report_path, len(report),
+        final_report_path, len(report),
     )
     return report
